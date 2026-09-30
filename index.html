@@ -37,12 +37,19 @@
   .wish .ok { color: #34d399; font-size: 12px; }
   .hint { font-size: 13px; color: #fde68a; background: rgba(245,158,11,0.12); border-radius: 10px; padding: 10px; margin-top: 12px; }
   a { color: #fbbf24; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; margin: 18px 0 6px; padding-bottom: 4px; }
+  .tab { flex: 0 0 auto; width: auto; padding: 9px 12px; margin: 0; font-size: 14px; border-radius: 999px;
+         background: rgba(255,255,255,0.08); color: #f8fafc; border: 1px solid rgba(255,255,255,0.18); }
+  .tab.active { background: #f59e0b; color: #1e1b4b; border-color: #f59e0b; }
+  input { width: 100%; margin-top: 10px; padding: 12px; border-radius: 12px; font-size: 15px;
+          border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: #f8fafc; }
+  .out { margin-top: 12px; font-size: 14px; color: #a7f3d0; word-break: break-all; min-height: 18px; }
 </style>
 </head>
 <body>
 <div class="card">
   <h1>🌠 Wish Wall</h1>
-  <p class="sub">Connect your wallet, write a wish, and sign it with your key. Anyone can verify the wish really came from your address.</p>
+  <p class="sub">Connect your wallet, sign a wish with your key, and use on-chain Transfer, Deposit, Message and Vote on Sepolia.</p>
 
   <div id="noWallet" class="hint" style="display:none">
     No wallet found. On a phone, open this page inside the MetaMask app browser:
@@ -58,11 +65,55 @@
     <button class="ghost" id="sepoliaBtn">Switch to Sepolia testnet</button>
   </div>
 
-  <textarea id="wishText" placeholder="Write your wish... e.g. Get a job I love" disabled></textarea>
-  <button id="signBtn" disabled>Sign my wish ✍️</button>
+  <div class="tabs">
+    <button class="tab active" data-tab="wish">🌠 Wish</button>
+    <button class="tab" data-tab="transfer">💸 Transfer</button>
+    <button class="tab" data-tab="deposit">🏦 Deposit</button>
+    <button class="tab" data-tab="message">💬 Message</button>
+    <button class="tab" data-tab="vote">🗳️ Vote</button>
+  </div>
 
-  <h3 style="margin:20px 0 4px; font-size:16px">Signed wishes (this device)</h3>
-  <div id="wishes"></div>
+  <section class="panel" id="panel-wish">
+    <textarea id="wishText" placeholder="Write your wish... e.g. Get a job I love" disabled></textarea>
+    <button id="signBtn" disabled>Sign my wish ✍️</button>
+    <h3 style="margin:20px 0 4px; font-size:16px">Signed wishes (this device)</h3>
+    <div id="wishes"></div>
+  </section>
+
+  <section class="panel" id="panel-transfer" style="display:none">
+    <p class="sub">Record a transfer between two addresses on the Sepolia contract.</p>
+    <input id="payer" placeholder="Payer address (0x...)" />
+    <input id="payee" placeholder="Payee address (0x...)" />
+    <input id="tAmount" type="number" placeholder="Amount" />
+    <button class="need" id="tSend" disabled>Send transfer</button>
+    <button class="ghost need" id="tCheck" disabled>Check last transfer</button>
+    <div class="out" id="tOut"></div>
+  </section>
+
+  <section class="panel" id="panel-deposit" style="display:none">
+    <p class="sub">Deposit an amount for a customer and view the latest deposit.</p>
+    <input id="dCustomer" placeholder="Customer address (0x...)" />
+    <input id="dAmount" type="number" placeholder="Amount" />
+    <button class="need" id="dSend" disabled>Deposit</button>
+    <button class="ghost need" id="dView" disabled>View deposit</button>
+    <div class="out" id="dOut"></div>
+  </section>
+
+  <section class="panel" id="panel-message" style="display:none">
+    <p class="sub">Write a message to the chain, then read it back.</p>
+    <input id="mText" placeholder="Your message" />
+    <button class="need" id="mSend" disabled>Save message</button>
+    <button class="ghost need" id="mRead" disabled>Read message</button>
+    <div class="out" id="mOut"></div>
+  </section>
+
+  <section class="panel" id="panel-vote" style="display:none">
+    <p class="sub">Vote for an idea and see how many votes it has.</p>
+    <input id="vIdea" placeholder="Idea, e.g. Bubble tea day" />
+    <button class="need" id="vSend" disabled>Vote</button>
+    <button class="ghost need" id="vGet" disabled>Get votes</button>
+    <div class="out" id="vOut"></div>
+  </section>
   <p class="sub" style="margin-top:18px; font-size:12px; text-align:center">SC6113 DApp · Wish Wall</p>
 </div>
 
@@ -88,7 +139,93 @@
     $("info").style.display = "block";
     $("wishText").disabled = false;
     $("signBtn").disabled = false;
+    document.querySelectorAll(".need").forEach((b) => (b.disabled = false));
   }
+
+  // ── Tabs ──
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.onclick = () => {
+      document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+      t.classList.add("active");
+      document.querySelectorAll(".panel").forEach((p) => (p.style.display = "none"));
+      $("panel-" + t.dataset.tab).style.display = "block";
+    };
+  });
+
+  // ── On-chain features (Sepolia contracts) ──
+  const C = {
+    transfer: { addr: "0x2a18da9ed767480460cf8061d39681fab5abdb56", abi: [
+      "function weixin(address _payer, address _payee, uint256 _amount) payable",
+      "function checktransaction() view returns (address, address, uint256)" ] },
+    deposit: { addr: "0x58aa6771a10c609a162dcac4df9e9ecdf4a974f5", abi: [
+      "function deposit_money(address customer_input, uint256 amount_input)",
+      "function deposit_view() view returns (address, uint256)" ] },
+    message: { addr: "0x2879ef5000f7e6ed0160530c4a74e4ee6825a8be", abi: [
+      "function setMessage(string _message)",
+      "function message() view returns (string)" ] },
+    vote: { addr: "0x6362470da4e83fd2da99d9c4387617a148d8d9d0", abi: [
+      "function vote(string idea)",
+      "function getVotes(string idea) view returns (uint256)" ] },
+  };
+
+  async function contract(name) {
+    const net = await provider.getNetwork();
+    if (net.chainId !== 11155111n) throw new Error("Please switch to Sepolia first");
+    return new ethers.Contract(C[name].addr, C[name].abi, signer);
+  }
+
+  async function run(outId, fn) {
+    const out = $(outId);
+    out.style.color = "#fde68a";
+    out.textContent = "Waiting for wallet...";
+    try {
+      const msg = await fn();
+      out.style.color = "#a7f3d0";
+      out.textContent = msg;
+    } catch (e) {
+      out.style.color = "#fca5a5";
+      out.textContent = "Error: " + (e.shortMessage || e.reason || e.message);
+    }
+  }
+
+  async function sendTx(tx, outId) {
+    $(outId).textContent = "Submitted, waiting for block... " + short(tx.hash);
+    await tx.wait();
+    return "Confirmed ✓ tx " + short(tx.hash);
+  }
+
+  $("tSend").onclick = () => run("tOut", async () => {
+    const c = await contract("transfer");
+    return sendTx(await c.weixin($("payer").value.trim(), $("payee").value.trim(), BigInt($("tAmount").value || 0)), "tOut");
+  });
+  $("tCheck").onclick = () => run("tOut", async () => {
+    const [a, b, n] = await (await contract("transfer")).checktransaction();
+    return `Payer ${short(a)} → Payee ${short(b)} · Amount ${n}`;
+  });
+
+  $("dSend").onclick = () => run("dOut", async () => {
+    const c = await contract("deposit");
+    return sendTx(await c.deposit_money($("dCustomer").value.trim(), BigInt($("dAmount").value || 0)), "dOut");
+  });
+  $("dView").onclick = () => run("dOut", async () => {
+    const [who, n] = await (await contract("deposit")).deposit_view();
+    return `Customer ${short(who)} · Deposit ${n}`;
+  });
+
+  $("mSend").onclick = () => run("mOut", async () => {
+    const c = await contract("message");
+    return sendTx(await c.setMessage($("mText").value), "mOut");
+  });
+  $("mRead").onclick = () => run("mOut", async () => "On-chain message: " + (await (await contract("message")).message()));
+
+  $("vSend").onclick = () => run("vOut", async () => {
+    const c = await contract("vote");
+    return sendTx(await c.vote($("vIdea").value.trim()), "vOut");
+  });
+  $("vGet").onclick = () => run("vOut", async () => {
+    const idea = $("vIdea").value.trim();
+    return `"${idea}" has ${await (await contract("vote")).getVotes(idea)} vote(s)`;
+  });
 
   $("connectBtn").onclick = async () => {
     try {

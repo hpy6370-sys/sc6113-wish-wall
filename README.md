@@ -2,6 +2,7 @@
 
 A mobile-friendly DApp: connect a wallet (MetaMask), view address / network / balance, switch to the Sepolia testnet, and sign a wish with your private key. Every signed wish is verified on the page with `ethers.verifyMessage`, proving it came from that address.
 
+- Tabs: Wish (sign + verify), Transfer, Deposit, Message, Vote (Sepolia contracts via ethers.js)
 - Single static page: `index.html` (ethers.js v6 via CDN)
 - On a phone, open the link inside the MetaMask in-app browser
 
